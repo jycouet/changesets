@@ -1,9 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { defaultConfig } from "@changesets/config";
 import { beforeEach, describe, expect, it } from "vitest";
 import { assembleReleasePlan } from "./index.ts";
 import { FakeFullState } from "./test-utils.ts";
 
-describe("assemble-release-plan", () => {
+describe("assembleReleasePlan", () => {
   let setup: FakeFullState;
 
   beforeEach(() => {
@@ -1216,6 +1217,86 @@ describe("assemble-release-plan", () => {
       expect(releases[1].name).toEqual("pkg-b");
       expect(releases[1].newVersion).toEqual("1.0.0");
     });
+  });
+});
+
+describe("dependent bumping", () => {
+  const cases = [
+    // direct
+    // patch -> patch
+    { prefix: "^", dep: "dep", type: "patch", expected: "1.0.1" },
+    { prefix: "~", dep: "dep", type: "patch", expected: "1.0.1" },
+    { prefix: "=", dep: "dep", type: "patch", expected: "1.0.1" },
+    // minor -> patch
+    { prefix: "^", dep: "dep", type: "minor", expected: "1.0.1" },
+    { prefix: "~", dep: "dep", type: "minor", expected: "1.0.1" },
+    { prefix: "=", dep: "dep", type: "minor", expected: "1.0.1" },
+    // major -> patch
+    { prefix: "^", dep: "dep", type: "major", expected: "1.0.1" },
+    { prefix: "~", dep: "dep", type: "major", expected: "1.0.1" },
+    { prefix: "=", dep: "dep", type: "major", expected: "1.0.1" },
+    // dev
+    // patch -> patch
+    { prefix: "^", dep: "dev", type: "patch", expected: "1.0.1" },
+    { prefix: "~", dep: "dev", type: "patch", expected: "1.0.1" },
+    { prefix: "=", dep: "dev", type: "patch", expected: "1.0.1" },
+    // minor -> patch
+    { prefix: "^", dep: "dev", type: "minor", expected: "1.0.1" },
+    { prefix: "~", dep: "dev", type: "minor", expected: "1.0.1" },
+    { prefix: "=", dep: "dev", type: "minor", expected: "1.0.1" },
+    // major -> patch
+    { prefix: "^", dep: "dev", type: "major", expected: "1.0.1" },
+    { prefix: "~", dep: "dev", type: "major", expected: "1.0.1" },
+    { prefix: "=", dep: "dev", type: "major", expected: "1.0.1" },
+    // peer
+    // patch -> patch
+    { prefix: "^", dep: "peer", type: "patch", expected: "1.0.1" },
+    { prefix: "~", dep: "peer", type: "patch", expected: "1.0.1" },
+    { prefix: "=", dep: "peer", type: "patch", expected: "1.0.1" },
+    // minor -> major
+    { prefix: "^", dep: "peer", type: "minor", expected: "2.0.0" },
+    { prefix: "~", dep: "peer", type: "minor", expected: "2.0.0" },
+    { prefix: "=", dep: "peer", type: "minor", expected: "2.0.0" },
+    // major -> major
+    { prefix: "^", dep: "peer", type: "major", expected: "2.0.0" },
+    { prefix: "~", dep: "peer", type: "major", expected: "2.0.0" },
+    { prefix: "=", dep: "peer", type: "major", expected: "2.0.0" },
+  ] as const;
+
+  describe("default config", () => {
+    for (const { dep, type, prefix, expected } of cases) {
+      // eslint-disable-next-line vitest/no-focused-tests
+      it.only(`(${prefix} ${dep.padStart(4)} | ${type.padEnd(5)}) => ${expected}`, () => {
+        const setup = new FakeFullState();
+        setup.addPackage("pkg-a-b", "1.0.0");
+        setup.addChangeset({
+          id: randomUUID(),
+          releases: [{ name: "pkg-a-b", type }],
+        });
+
+        const actualPrefix = prefix !== "=" ? prefix : "";
+        const versionString = `${actualPrefix}1.0.0`;
+        if (dep === "dep") {
+          setup.updateDependency("pkg-a", "pkg-a-b", versionString);
+        } else if (dep === "dev") {
+          setup.updateDevDependency("pkg-a", "pkg-a-b", versionString);
+        } else if (dep === "peer") {
+          setup.updatePeerDependency("pkg-a", "pkg-a-b", versionString);
+        }
+
+        const { releases } = assembleReleasePlan(
+          setup.changesets,
+          setup.packages,
+          defaultConfig,
+          undefined,
+        );
+
+        expect(releases[0]).toMatchObject({
+          name: "pkg-a",
+          newVersion: expected,
+        });
+      });
+    }
   });
 });
 
