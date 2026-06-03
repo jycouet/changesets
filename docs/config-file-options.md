@@ -164,6 +164,44 @@ You would specify our github changelog generator with:
 
 If you want to disable thank you messages, add `"disableThanks": true` to the options.
 
+#### `template` (optional string)
+
+By default each changelog line looks like `- [#123](url) [abc1234](url) Thanks [@user](url)! - summary`. Set `template` to render the line yourself from these tokens (each token includes its own leading space and renders to nothing when its data is absent):
+
+| Token       | Renders                                                                                                                       |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `{summary}` | the changeset summary's first line (with issue autolinking)                                                                   |
+| `{ref}`     | a single parenthesized reference: ` ([#123](url))` if there is a PR, else `` ([`abc1234`](url)) `` for a commit, else nothing |
+| `{pr}`      | ` [#123](url)`                                                                                                                |
+| `{commit}`  | `` [`abc1234`](url) ``                                                                                                        |
+| `{thanks}`  | ` Thanks [@user](url)!` (respects `disableThanks`)                                                                            |
+| `{authors}` | ` [@user](url)` (the contributors, without "Thanks")                                                                          |
+
+When `template` is unset the default output is unchanged. Continuation lines of a multi-line summary are always appended below, indented by two spaces. An unknown token (for example a typo) throws an error during `changeset version`.
+
+#### `autolinkIssues` (optional `"all"` or `"hints"`)
+
+Controls how issue references in the summary are linked. `"all"` (the default) links every bare `#123`. `"hints"` only links a reference inside `(fix #123)`, `(fixes #123)`, or `(see #123)`.
+
+#### Migrating off `@svitejs/changesets-changelog-github-compact`
+
+That package is unmaintained. These options reproduce its output:
+
+```json
+{
+  "changelog": [
+    "@changesets/changelog-github",
+    {
+      "repo": "<org>/<repo>",
+      "template": "\n- {summary}{ref}",
+      "autolinkIssues": "hints"
+    }
+  ]
+}
+```
+
+This produces lines like `- fix the thing ([#123](url))`.
+
 For more details on these functions and information on how to write your own see [changelog-functions](./modifying-changelog-format.md)
 
 ## `bumpVersionsWithWorkspaceProtocolOnly` (optional boolean)

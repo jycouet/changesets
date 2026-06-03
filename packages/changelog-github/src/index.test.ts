@@ -1,4 +1,8 @@
-import changelogFunctions from "./index";
+import changelogFunctions, {
+  renderTemplate,
+  buildReleaseLineTokens,
+  RELEASE_LINE_TOKENS,
+} from "./index";
 import parse from "@changesets/parse";
 
 const getReleaseLine = changelogFunctions.getReleaseLine;
@@ -256,4 +260,197 @@ it("disables thanks if disableThanks is enabled", async () => {
     - [#1613](https://github.com/emotion-js/emotion/pull/1613) [\`a085003\`](https://github.com/emotion-js/emotion/commit/a085003) - something
     "
   `);
+});
+
+describe("renderTemplate", () => {
+  const tokens = {
+    summary: "msg",
+    ref: " (REF)",
+    pr: " (PR)",
+    commit: " (COMMIT)",
+    thanks: " THANKS",
+    authors: " AUTHORS",
+  };
+
+  it("substitutes known tokens", () => {
+    expect(renderTemplate("\n- {summary}{ref}", tokens)).toBe("\n- msg (REF)");
+  });
+
+  it("leaves non-token text untouched", () => {
+    expect(renderTemplate("- start {summary} end", tokens)).toBe(
+      "- start msg end"
+    );
+  });
+
+  it("throws on an unknown token", () => {
+    expect(() => renderTemplate("- {summery}", tokens)).toThrow(
+      /Unknown changelog template token "\{summery\}"/
+    );
+  });
+});
+
+describe("buildReleaseLineTokens", () => {
+  it("ref prefers PR over commit", () => {
+    const t = buildReleaseLineTokens({
+      summary: "msg",
+      links: { pull: "[#1](u)", commit: "[`abc`](u)", user: "[@x](u)" },
+      users: "[@x](u)",
+    });
+    expect(t.ref).toBe(" ([#1](u))");
+    expect(t.pr).toBe(" [#1](u)");
+    expect(t.commit).toBe(" [`abc`](u)");
+    expect(t.thanks).toBe(" Thanks [@x](u)!");
+    expect(t.authors).toBe(" [@x](u)");
+    expect(t.summary).toBe("msg");
+  });
+
+  it("ref falls back to commit when there is no PR", () => {
+    const t = buildReleaseLineTokens({
+      summary: "msg",
+      links: { pull: null, commit: "[`abc`](u)", user: null },
+      users: null,
+    });
+    expect(t.ref).toBe(" ([`abc`](u))");
+    expect(t.pr).toBe("");
+    expect(t.thanks).toBe("");
+    expect(t.authors).toBe("");
+  });
+
+  it("ref is empty when there is neither PR nor commit", () => {
+    const t = buildReleaseLineTokens({
+      summary: "msg",
+      links: { pull: null, commit: null, user: null },
+      users: null,
+    });
+    expect(t.ref).toBe("");
+    expect(t.commit).toBe("");
+  });
+
+  it("returns exactly the documented RELEASE_LINE_TOKENS keys", () => {
+    const keys = Object.keys(
+      buildReleaseLineTokens({
+        summary: "m",
+        links: { pull: null, commit: null, user: null },
+        users: null,
+      })
+    ).sort();
+    expect(keys).toEqual([...RELEASE_LINE_TOKENS].sort());
+  });
+});
+
+describe("template option (compact reproduction)", () => {
+  const compactOpts = {
+    repo: data.repo,
+    template: "\n- {summary}{ref}",
+    autolinkIssues: "hints",
+  };
+
+  it("renders the compact single-line form with PR ref", async () => {
+    const changeset = {
+      id: "x",
+      summary: "fix the thing",
+      releases: [{ name: "pkg", type: "minor" as const }],
+      commit: data.commit,
+    };
+    expect(await getReleaseLine(changeset, "minor", compactOpts)).toBe(
+      "\n- fix the thing ([#1613](https://github.com/emotion-js/emotion/pull/1613))\n"
+    );
+  });
+
+  it("keeps multi-line summaries: first line templated, rest indented", async () => {
+    const changeset = {
+      id: "x",
+      summary: "first line\nsecond line",
+      releases: [{ name: "pkg", type: "minor" as const }],
+      commit: data.commit,
+    };
+    expect(await getReleaseLine(changeset, "minor", compactOpts)).toBe(
+      "\n- first line ([#1613](https://github.com/emotion-js/emotion/pull/1613))\n  second line"
+    );
+  });
+
+  it("omits attribution because no token references it", async () => {
+    const changeset = {
+      id: "x",
+      summary: "fix the thing",
+      releases: [{ name: "pkg", type: "minor" as const }],
+      commit: data.commit,
+    };
+    const line = await getReleaseLine(changeset, "minor", compactOpts);
+    expect(line).not.toContain("Thanks");
+  });
+
+  it("renders {thanks} when the template references it", async () => {
+    const changeset = {
+      id: "x",
+      summary: "fix the thing",
+      releases: [{ name: "pkg", type: "minor" as const }],
+      commit: data.commit,
+    };
+    expect(
+      await getReleaseLine(changeset, "minor", {
+        repo: data.repo,
+        template: "\n- {summary}{thanks}",
+      })
+    ).toBe(
+      "\n- fix the thing Thanks [@Andarist](https://github.com/Andarist)!\n"
+    );
+  });
+
+  it("renders {authors} without the word Thanks", async () => {
+    const changeset = {
+      id: "x",
+      summary: "fix the thing",
+      releases: [{ name: "pkg", type: "minor" as const }],
+      commit: data.commit,
+    };
+    expect(
+      await getReleaseLine(changeset, "minor", {
+        repo: data.repo,
+        template: "\n- {summary}{authors}",
+      })
+    ).toBe("\n- fix the thing [@Andarist](https://github.com/Andarist)\n");
+  });
+});
+
+describe("autolinkIssues option", () => {
+  const optionsWith = (extra: Record<string, any>) => ({
+    repo: data.repo,
+    ...extra,
+  });
+
+  it('"hints" only links refs inside (fix|fixes|see #n)', async () => {
+    const changeset = {
+      id: "x",
+      summary: "did a thing (fixes #99) and also #1234",
+      releases: [{ name: "pkg", type: "minor" as const }],
+      commit: data.commit,
+    };
+    const line = await getReleaseLine(
+      changeset,
+      "minor",
+      optionsWith({ autolinkIssues: "hints" })
+    );
+    expect(line).toContain(
+      "(fixes [#99](https://github.com/emotion-js/emotion/issues/99))"
+    );
+    expect(line).toContain("and also #1234");
+    expect(line).not.toContain("issues/1234");
+  });
+
+  it('"all" (default) still links every bare #n', async () => {
+    const changeset = {
+      id: "x",
+      summary: "did a thing (fixes #99) and also #1234",
+      releases: [{ name: "pkg", type: "minor" as const }],
+      commit: data.commit,
+    };
+    const line = await getReleaseLine(changeset, "minor", optionsWith({}));
+    expect(line).toContain(
+      "[#1234](https://github.com/emotion-js/emotion/issues/1234)"
+    );
+    expect(line).toContain(
+      "[#99](https://github.com/emotion-js/emotion/issues/99)"
+    );
+  });
 });

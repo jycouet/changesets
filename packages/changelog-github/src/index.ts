@@ -18,10 +18,68 @@ function linkifyIssueRefs(
   );
 }
 
+// narrow autolinking used by `autolinkIssues: "hints"`: only links a ref that
+// sits inside `(fix #123)`, `(fixes #123)`, or `(see #123)`
+function linkifyIssueHints(
+  line: string,
+  { serverUrl, repo }: { serverUrl: string; repo: string }
+): string {
+  return line.replace(
+    /(?<=\( ?(?:fix|fixes|see) )#(\d+)(?= ?\))/g,
+    (_match, issue) => `[#${issue}](${serverUrl}/${repo}/issues/${issue})`
+  );
+}
+
 function readEnv() {
   const GITHUB_SERVER_URL =
     process.env.GITHUB_SERVER_URL || "https://github.com";
   return { GITHUB_SERVER_URL };
+}
+
+export const RELEASE_LINE_TOKENS = [
+  "summary",
+  "ref",
+  "pr",
+  "commit",
+  "thanks",
+  "authors",
+] as const;
+
+export function renderTemplate(
+  template: string,
+  tokens: Record<string, string>
+): string {
+  return template.replace(/\{(\w+)\}/g, (_match, name: string) => {
+    if (!Object.prototype.hasOwnProperty.call(tokens, name)) {
+      throw new Error(
+        `Unknown changelog template token "{${name}}". Valid tokens are: ${RELEASE_LINE_TOKENS.map(
+          (t) => `{${t}}`
+        ).join(", ")}.`
+      );
+    }
+    return tokens[name];
+  });
+}
+
+export function buildReleaseLineTokens(args: {
+  summary: string;
+  links: { pull: string | null; commit: string | null; user: string | null };
+  users: string | null;
+}): Record<string, string> {
+  const { summary, links, users } = args;
+  const ref = links.pull
+    ? ` (${links.pull})`
+    : links.commit
+    ? ` (${links.commit})`
+    : "";
+  return {
+    summary,
+    ref,
+    pr: links.pull ? ` ${links.pull}` : "",
+    commit: links.commit ? ` ${links.commit}` : "",
+    thanks: users ? ` Thanks ${users}!` : "",
+    authors: users ? ` ${users}` : "",
+  };
 }
 
 const changelogFunctions: ChangelogFunctions = {
@@ -91,6 +149,13 @@ const changelogFunctions: ChangelogFunctions = {
       .split("\n")
       .map((l) => l.trimEnd());
 
+    const autolink = (line: string): string => {
+      const linkOpts = { serverUrl: GITHUB_SERVER_URL, repo: options.repo };
+      return options.autolinkIssues === "hints"
+        ? linkifyIssueHints(line, linkOpts)
+        : linkifyIssueRefs(line, linkOpts);
+    };
+
     const links = await (async () => {
       if (prFromSummary !== undefined) {
         let { links } = await getInfoFromPullRequest({
@@ -138,18 +203,21 @@ const changelogFunctions: ChangelogFunctions = {
       users === null ? "" : ` Thanks ${users}!`,
     ].join("");
 
-    return `\n\n-${prefix ? `${prefix} -` : ""} ${linkifyIssueRefs(firstLine, {
-      serverUrl: GITHUB_SERVER_URL,
-      repo: options!.repo,
-    })}\n${futureLines
-      .map(
-        (l) =>
-          `  ${linkifyIssueRefs(l, {
-            serverUrl: GITHUB_SERVER_URL,
-            repo: options!.repo,
-          })}`
-      )
-      .join("\n")}`;
+    if (typeof options.template === "string" && options.template.length > 0) {
+      const tokens = buildReleaseLineTokens({
+        summary: autolink(firstLine),
+        links,
+        users,
+      });
+      const rendered = renderTemplate(options.template, tokens);
+      return `${rendered}\n${futureLines
+        .map((l) => `  ${autolink(l)}`)
+        .join("\n")}`;
+    }
+
+    return `\n\n-${prefix ? `${prefix} -` : ""} ${autolink(
+      firstLine
+    )}\n${futureLines.map((l) => `  ${autolink(l)}`).join("\n")}`;
   },
 };
 
