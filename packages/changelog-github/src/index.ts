@@ -41,7 +41,6 @@ export const RELEASE_LINE_TOKENS = [
   "ref",
   "pr",
   "commit",
-  "thanks",
   "authors",
 ] as const;
 
@@ -67,18 +66,20 @@ export function buildReleaseLineTokens(args: {
   users: string | null;
 }): Record<string, string> {
   const { summary, links, users } = args;
+  // Tokens render bare (no built-in spacing); the template author writes the
+  // spaces. `{ref}` is the one self-contained convenience: a parenthesized
+  // PR-or-commit reference (PR wins), empty when there is neither.
   const ref = links.pull
-    ? ` (${links.pull})`
+    ? `(${links.pull})`
     : links.commit
-    ? ` (${links.commit})`
+    ? `(${links.commit})`
     : "";
   return {
     summary,
     ref,
-    pr: links.pull ? ` ${links.pull}` : "",
-    commit: links.commit ? ` ${links.commit}` : "",
-    thanks: users ? ` Thanks ${users}!` : "",
-    authors: users ? ` ${users}` : "",
+    pr: links.pull ?? "",
+    commit: links.commit ?? "",
+    authors: users ?? "",
   };
 }
 
@@ -197,27 +198,31 @@ const changelogFunctions: ChangelogFunctions = {
           .join(", ")
       : links.user;
 
-    const prefix = [
-      links.pull === null ? "" : ` ${links.pull}`,
-      links.commit === null ? "" : ` ${links.commit}`,
-      users === null ? "" : ` Thanks ${users}!`,
-    ].join("");
+    const tokens = buildReleaseLineTokens({
+      summary: autolink(firstLine),
+      links,
+      users,
+    });
+    const continuation = futureLines
+      .map((l) => `  ${autolink(l)}`)
+      .join("\n");
 
     if (typeof options.template === "string" && options.template.length > 0) {
-      const tokens = buildReleaseLineTokens({
-        summary: autolink(firstLine),
-        links,
-        users,
-      });
-      const rendered = renderTemplate(options.template, tokens);
-      return `${rendered}\n${futureLines
-        .map((l) => `  ${autolink(l)}`)
-        .join("\n")}`;
+      // trimEnd so an empty trailing token (e.g. `{ref}` with no PR/commit)
+      // leaves no dangling space - a trailing space in markdown is unsafe.
+      const rendered = renderTemplate(options.template, tokens).trimEnd();
+      return `${rendered}\n${continuation}`;
     }
 
-    return `\n\n-${prefix ? `${prefix} -` : ""} ${autolink(
-      firstLine
-    )}\n${futureLines.map((l) => `  ${autolink(l)}`).join("\n")}`;
+    const prefix = [
+      tokens.pr,
+      tokens.commit,
+      users === null ? "" : `Thanks ${tokens.authors}!`,
+    ].filter(Boolean);
+
+    return `\n\n-${
+      prefix.length ? ` ${prefix.join(" ")} -` : ""
+    } ${tokens.summary}\n${continuation}`;
   },
 };
 

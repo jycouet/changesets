@@ -166,18 +166,17 @@ If you want to disable thank you messages, add `"disableThanks": true` to the op
 
 #### `template` (optional string)
 
-By default each changelog line looks like `- [#123](url) [abc1234](url) Thanks [@user](url)! - summary`. Set `template` to render the line yourself from these tokens (each token includes its own leading space and renders to nothing when its data is absent):
+By default each changelog line looks like `- [#123](url) [abc1234](url) Thanks [@user](url)! - summary`. Set `template` to render the line yourself from these tokens. Each token renders bare (you write the surrounding spaces) and renders to nothing when its data is absent:
 
-| Token       | Renders                                                                                                                       |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `{summary}` | the changeset summary's first line (with issue autolinking)                                                                   |
-| `{ref}`     | a single parenthesized reference: ` ([#123](url))` if there is a PR, else `` ([`abc1234`](url)) `` for a commit, else nothing |
-| `{pr}`      | ` [#123](url)`                                                                                                                |
-| `{commit}`  | `` [`abc1234`](url) ``                                                                                                        |
-| `{thanks}`  | ` Thanks [@user](url)!` (respects `disableThanks`)                                                                            |
-| `{authors}` | ` [@user](url)` (the contributors, without "Thanks")                                                                          |
+| Token       | Renders                                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------- |
+| `{summary}` | the changeset summary's first line (with issue autolinking)                                                          |
+| `{ref}`     | a single parenthesized reference: `([#123](url))` if there is a PR, else `` ([`abc1234`](url)) `` for a commit, else nothing |
+| `{pr}`      | `[#123](url)`                                                                                                        |
+| `{commit}`  | `` [`abc1234`](url) ``                                                                                               |
+| `{authors}` | `[@user](url)` (the contributors, respects `disableThanks`). For the "Thanks" prefix, write it in the template: `Thanks {authors}!` |
 
-When `template` is unset the default output is unchanged. Continuation lines of a multi-line summary are always appended below, indented by two spaces. An unknown token (for example a typo) throws an error during `changeset version`.
+Trailing whitespace on the rendered line is trimmed, so a trailing token that renders empty (e.g. `{ref}` with no PR or commit) leaves no dangling space. When `template` is unset the default output is unchanged. Continuation lines of a multi-line summary are always appended below, indented by two spaces. An unknown token (for example a typo, or the removed `{thanks}`) throws an error during `changeset version`.
 
 #### `autolinkIssues` (optional `"all"` or `"hints"`)
 
@@ -193,7 +192,7 @@ That package is unmaintained. These options reproduce its output:
     "@changesets/changelog-github",
     {
       "repo": "<org>/<repo>",
-      "template": "\n- {summary}{ref}",
+      "template": "\n- {summary} {ref}",
       "autolinkIssues": "hints"
     }
   ]

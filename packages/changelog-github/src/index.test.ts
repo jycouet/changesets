@@ -265,15 +265,14 @@ it("disables thanks if disableThanks is enabled", async () => {
 describe("renderTemplate", () => {
   const tokens = {
     summary: "msg",
-    ref: " (REF)",
-    pr: " (PR)",
-    commit: " (COMMIT)",
-    thanks: " THANKS",
-    authors: " AUTHORS",
+    ref: "(REF)",
+    pr: "(PR)",
+    commit: "(COMMIT)",
+    authors: "AUTHORS",
   };
 
   it("substitutes known tokens", () => {
-    expect(renderTemplate("\n- {summary}{ref}", tokens)).toBe("\n- msg (REF)");
+    expect(renderTemplate("- {summary} {ref}", tokens)).toBe("- msg (REF)");
   });
 
   it("leaves non-token text untouched", () => {
@@ -287,6 +286,12 @@ describe("renderTemplate", () => {
       /Unknown changelog template token "\{summery\}"/
     );
   });
+
+  it("throws on the removed {thanks} token", () => {
+    expect(() => renderTemplate("- {thanks}", tokens)).toThrow(
+      /Unknown changelog template token "\{thanks\}"/
+    );
+  });
 });
 
 describe("buildReleaseLineTokens", () => {
@@ -296,11 +301,10 @@ describe("buildReleaseLineTokens", () => {
       links: { pull: "[#1](u)", commit: "[`abc`](u)", user: "[@x](u)" },
       users: "[@x](u)",
     });
-    expect(t.ref).toBe(" ([#1](u))");
-    expect(t.pr).toBe(" [#1](u)");
-    expect(t.commit).toBe(" [`abc`](u)");
-    expect(t.thanks).toBe(" Thanks [@x](u)!");
-    expect(t.authors).toBe(" [@x](u)");
+    expect(t.ref).toBe("([#1](u))");
+    expect(t.pr).toBe("[#1](u)");
+    expect(t.commit).toBe("[`abc`](u)");
+    expect(t.authors).toBe("[@x](u)");
     expect(t.summary).toBe("msg");
   });
 
@@ -310,9 +314,8 @@ describe("buildReleaseLineTokens", () => {
       links: { pull: null, commit: "[`abc`](u)", user: null },
       users: null,
     });
-    expect(t.ref).toBe(" ([`abc`](u))");
+    expect(t.ref).toBe("([`abc`](u))");
     expect(t.pr).toBe("");
-    expect(t.thanks).toBe("");
     expect(t.authors).toBe("");
   });
 
@@ -341,7 +344,7 @@ describe("buildReleaseLineTokens", () => {
 describe("template option (compact reproduction)", () => {
   const compactOpts = {
     repo: data.repo,
-    template: "\n- {summary}{ref}",
+    template: "\n- {summary} {ref}",
     autolinkIssues: "hints",
   };
 
@@ -380,7 +383,7 @@ describe("template option (compact reproduction)", () => {
     expect(line).not.toContain("Thanks");
   });
 
-  it("renders {thanks} when the template references it", async () => {
+  it("renders attribution from literal text plus {authors}", async () => {
     const changeset = {
       id: "x",
       summary: "fix the thing",
@@ -390,7 +393,7 @@ describe("template option (compact reproduction)", () => {
     expect(
       await getReleaseLine(changeset, "minor", {
         repo: data.repo,
-        template: "\n- {summary}{thanks}",
+        template: "\n- {summary} Thanks {authors}!",
       })
     ).toBe(
       "\n- fix the thing Thanks [@Andarist](https://github.com/Andarist)!\n"
@@ -407,9 +410,24 @@ describe("template option (compact reproduction)", () => {
     expect(
       await getReleaseLine(changeset, "minor", {
         repo: data.repo,
-        template: "\n- {summary}{authors}",
+        template: "\n- {summary} {authors}",
       })
     ).toBe("\n- fix the thing [@Andarist](https://github.com/Andarist)\n");
+  });
+
+  it("trims a trailing space left by an empty trailing token", async () => {
+    const changeset = {
+      id: "x",
+      summary: "fix the thing",
+      releases: [{ name: "pkg", type: "minor" as const }],
+      commit: undefined,
+    };
+    expect(
+      await getReleaseLine(changeset, "minor", {
+        repo: data.repo,
+        template: "\n- {summary} {ref}",
+      })
+    ).toBe("\n- fix the thing\n");
   });
 });
 
