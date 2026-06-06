@@ -472,3 +472,35 @@ describe("autolinkIssues option", () => {
     );
   });
 });
+
+// Locks the template/output examples shown in docs/config-file-options.md so
+// they cannot drift. Mock data renders PR #1613, commit a085003, @Andarist.
+describe("documented template examples", () => {
+  const pr = "[#1613](https://github.com/emotion-js/emotion/pull/1613)";
+  const commit =
+    "[`a085003`](https://github.com/emotion-js/emotion/commit/a085003)";
+  const author = "[@Andarist](https://github.com/Andarist)";
+
+  it.each([
+    [
+      "\n- {pr} {commit} Thanks {authors}! - {summary}",
+      `\n- ${pr} ${commit} Thanks ${author}! - fix the thing\n`,
+    ],
+    ["\n- {summary} {ref}", `\n- fix the thing (${pr})\n`],
+    [
+      "\n- {summary} (thanks {authors}!)",
+      `\n- fix the thing (thanks ${author}!)\n`,
+    ],
+    ["\n- {summary} {pr}", `\n- fix the thing ${pr}\n`],
+  ])("template %p renders %p", async (template, expected) => {
+    const changeset = {
+      id: "x",
+      summary: "fix the thing",
+      releases: [{ name: "pkg", type: "minor" as const }],
+      commit: data.commit,
+    };
+    expect(
+      await getReleaseLine(changeset, "minor", { repo: data.repo, template })
+    ).toBe(expected);
+  });
+});

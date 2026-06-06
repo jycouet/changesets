@@ -178,6 +178,15 @@ By default each changelog line looks like `- [#123](url) [abc1234](url) Thanks [
 
 Trailing whitespace on the rendered line is trimmed, so a trailing token that renders empty (e.g. `{ref}` with no PR or commit) leaves no dangling space. When `template` is unset the default output is unchanged. Continuation lines of a multi-line summary are always appended below, indented by two spaces. An unknown token (for example a typo, or the removed `{thanks}`) throws an error during `changeset version`.
 
+Examples (for a change with PR `#123`, commit `abc1234`, author `@alice`, summary `fix the thing`):
+
+| `template`                                   | rendered line                                            |
+| -------------------------------------------- | -------------------------------------------------------- |
+| `"\n- {pr} {commit} Thanks {authors}! - {summary}"` | `- [#123](url) [abc1234](url) Thanks [@alice](url)! - fix the thing` (the default) |
+| `"\n- {summary} {ref}"`                      | `- fix the thing ([#123](url))` (the compact form)       |
+| `"\n- {summary} (thanks {authors}!)"`        | `- fix the thing (thanks [@alice](url)!)`                |
+| `"\n- {summary} {pr}"`                       | `- fix the thing [#123](url)`                            |
+
 #### `autolinkIssues` (optional `"all"` or `"hints"`)
 
 Controls how issue references in the summary are linked. `"all"` (the default) links every bare `#123`. `"hints"` only links a reference inside `(fix #123)`, `(fixes #123)`, or `(see #123)`.
