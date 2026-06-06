@@ -187,9 +187,7 @@ const changelogFunctions: ChangelogFunctions = {
       };
     })();
 
-    const users = options.disableThanks
-      ? null
-      : usersFromSummary.length
+    const users = usersFromSummary.length
       ? usersFromSummary
           .map(
             (userFromSummary) =>
@@ -198,6 +196,9 @@ const changelogFunctions: ChangelogFunctions = {
           .join(", ")
       : links.user;
 
+    // `{authors}` always carries the contributors; `disableThanks` is honored
+    // only by the default line below. In template mode the template owns the
+    // line, so drop attribution by omitting `{authors}` instead.
     const tokens = buildReleaseLineTokens({
       summary: autolink(firstLine),
       links,
@@ -214,11 +215,12 @@ const changelogFunctions: ChangelogFunctions = {
       return `${rendered}\n${continuation}`;
     }
 
-    const prefix = [
-      tokens.pr,
-      tokens.commit,
-      users === null ? "" : `Thanks ${tokens.authors}!`,
-    ].filter(Boolean);
+    // `disableThanks` is deprecated: prefer a `template` that omits `{authors}`.
+    const thanks =
+      options.disableThanks || users === null
+        ? ""
+        : `Thanks ${tokens.authors}!`;
+    const prefix = [tokens.pr, tokens.commit, thanks].filter(Boolean);
 
     return `\n\n-${
       prefix.length ? ` ${prefix.join(" ")} -` : ""

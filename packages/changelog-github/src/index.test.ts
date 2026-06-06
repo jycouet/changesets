@@ -415,6 +415,22 @@ describe("template option (compact reproduction)", () => {
     ).toBe("\n- fix the thing [@Andarist](https://github.com/Andarist)\n");
   });
 
+  it("ignores disableThanks in template mode ({authors} still renders)", async () => {
+    const changeset = {
+      id: "x",
+      summary: "fix the thing",
+      releases: [{ name: "pkg", type: "minor" as const }],
+      commit: data.commit,
+    };
+    expect(
+      await getReleaseLine(changeset, "minor", {
+        repo: data.repo,
+        disableThanks: true,
+        template: "\n- {summary} {authors}",
+      })
+    ).toBe("\n- fix the thing [@Andarist](https://github.com/Andarist)\n");
+  });
+
   it("trims a trailing space left by an empty trailing token", async () => {
     const changeset = {
       id: "x",
