@@ -164,8 +164,6 @@ You would specify our github changelog generator with:
 
 If you want to disable thank you messages, add `"disableThanks": true` to the options.
 
-> **Deprecated:** `disableThanks` only affects the default line. Prefer a [`template`](#template-optional-string) that omits `{authors}` - it gives full control over attribution and is honored in template mode (where `disableThanks` is ignored).
-
 #### `template` (optional string)
 
 By default each changelog line looks like `- [#123](url) [abc1234](url) Thanks [@user](url)! - summary`. Set `template` to render the line yourself from these tokens. Each token renders bare (you write the surrounding spaces) and renders to nothing when its data is absent:
@@ -176,7 +174,7 @@ By default each changelog line looks like `- [#123](url) [abc1234](url) Thanks [
 | `{ref}`     | a single parenthesized reference: `([#123](url))` if there is a PR, else `` ([`abc1234`](url)) `` for a commit, else nothing |
 | `{pr}`      | `[#123](url)`                                                                                                        |
 | `{commit}`  | `` [`abc1234`](url) ``                                                                                               |
-| `{authors}` | `[@user](url)` (the contributors; ignores `disableThanks` - omit this token to drop attribution). For the "Thanks" prefix, write it in the template: `Thanks {authors}!` |
+| `{authors}` | `[@user](url)` (the contributors, respects `disableThanks`). For the "Thanks" prefix, write it in the template: `Thanks {authors}!` |
 
 Trailing whitespace on the rendered line is trimmed, so a trailing token that renders empty (e.g. `{ref}` with no PR or commit) leaves no dangling space. When `template` is unset the default output is unchanged. Continuation lines of a multi-line summary are always appended below, indented by two spaces. An unknown token (for example a typo, or the removed `{thanks}`) throws an error during `changeset version`.
 
