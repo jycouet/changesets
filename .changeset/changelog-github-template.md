@@ -1,5 +1,7 @@
 ---
-"@changesets/changelog-github": minor
+"@changesets/changelog-github": major
 ---
 
-Add opt-in `template` and `autolinkIssues` options to render compact changelog lines (e.g. to replace `@svitejs/changesets-changelog-github-compact`). Default output is unchanged.
+Replace `template`, `autolinkIssues`, and `disableThanks` with `composeReleaseLine`. Point `changelog` at a small local module and compose each line in JS - `pr`, `commit`, `authors[]`, `linkRefs`/`linkHints` helpers, and an optional `separator` override (e.g. for compact output). Default output is unchanged.
+
+Migration: `disableThanks: true` becomes a `composeReleaseLine` callback that omits the `Thanks ...!` segment. See `docs/config-file-options.md`.

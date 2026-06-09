@@ -162,53 +162,75 @@ You would specify our github changelog generator with:
 }
 ```
 
-If you want to disable thank you messages, add `"disableThanks": true` to the options.
+#### Custom line format with `composeReleaseLine`
 
-#### `template` (optional string)
+For full control over each changelog line, point `changelog` at a small local module and compose the line in JavaScript with `composeReleaseLine`:
 
-By default each changelog line looks like `- [#123](url) [abc1234](url) Thanks [@user](url)! - summary`. Set `template` to render the line yourself from these tokens. Each token renders bare (you write the surrounding spaces) and renders to nothing when its data is absent:
+```js
+// .changeset/changelog.js
+import { composeReleaseLine } from "@changesets/changelog-github";
 
-| Token       | Renders                                                                                                                             |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `{summary}` | the changeset summary's first line (with issue autolinking)                                                                         |
-| `{ref}`     | a single parenthesized reference: `([#123](url))` if there is a PR, else ``([`abc1234`](url))`` for a commit, else nothing          |
-| `{pr}`      | `[#123](url)`                                                                                                                       |
-| `{commit}`  | ``[`abc1234`](url)``                                                                                                                |
-| `{authors}` | `[@user](url)` (the contributors, respects `disableThanks`). For the "Thanks" prefix, write it in the template: `Thanks {authors}!` |
+export const getReleaseLine = composeReleaseLine(
+  ({ summary, pr, commit, authors, linkRefs, linkHints }) => {
+    // return a string, or { separator, line } to override the entry separator
+  },
+);
 
-Trailing whitespace on the rendered line is trimmed, so a trailing token that renders empty (e.g. `{ref}` with no PR or commit) leaves no dangling space. When `template` is unset the default output is unchanged. Continuation lines of a multi-line summary are always appended below, indented by two spaces. An unknown token (for example a typo, or the removed `{thanks}`) throws an error during `changeset version`.
-
-Examples (for a change with PR `#123`, commit `abc1234`, author `@alice`, summary `fix the thing`):
-
-| `template`                                          | rendered line                                                                      |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `"\n- {pr} {commit} Thanks {authors}! - {summary}"` | `- [#123](url) [abc1234](url) Thanks [@alice](url)! - fix the thing` (the default) |
-| `"\n- {summary} {ref}"`                             | `- fix the thing ([#123](url))` (the compact form)                                 |
-| `"\n- {summary} (thanks {authors}!)"`               | `- fix the thing (thanks [@alice](url)!)`                                          |
-| `"\n- {summary} {pr}"`                              | `- fix the thing [#123](url)`                                                      |
-
-#### `autolinkIssues` (optional `"all"` or `"hints"`)
-
-Controls how issue references in the summary are linked. `"all"` (the default) links every bare `#123`. `"hints"` only links a reference inside `(fix #123)`, `(fixes #123)`, or `(see #123)`.
-
-#### Migrating off `@svitejs/changesets-changelog-github-compact`
-
-That package is unmaintained. These options reproduce its output:
+export { getDependencyReleaseLine } from "@changesets/changelog-github";
+```
 
 ```json
 {
-  "changelog": [
-    "@changesets/changelog-github",
-    {
-      "repo": "<org>/<repo>",
-      "template": "\n- {summary} {ref}",
-      "autolinkIssues": "hints"
-    }
-  ]
+  "changelog": ["./changelog.js", { "repo": "<org>/<repo>" }]
 }
 ```
 
-This produces lines like `- fix the thing ([#123](url))`.
+The callback receives:
+
+| Field       | Value                                                             |
+| ----------- | ----------------------------------------------------------------- |
+| `summary`   | the changeset summary's first line, raw (not linkified)           |
+| `pr`        | `[#123](url)`, or `""` when there is none                         |
+| `commit`    | ``[`abc1234`](url)``, or `""` when there is none                  |
+| `authors`   | array of `[@user](url)` links; empty when there is no attribution |
+| `linkRefs`  | links every bare `#123` (the default issue autolinking)           |
+| `linkHints` | links only refs inside `(fix #123)`, `(fixes #123)`, `(see #123)` |
+
+Return a string to use the default `\n\n` entry separator, or `{ separator, line }` to override it. Continuation lines of a multi-line summary are always appended below, indented by two spaces and linkified with `linkRefs`.
+
+**Default output** (what you get with no custom module):
+
+```js
+({ summary, pr, commit, authors, linkRefs }) => {
+  const prefix = [
+    pr ? ` ${pr}` : "",
+    commit ? ` ${commit}` : "",
+    authors.length ? ` Thanks ${authors.join(", ")}!` : "",
+  ].join("");
+  return `-${prefix ? `${prefix} -` : ""} ${linkRefs(summary)}`;
+};
+```
+
+**Compact** (reproduces `@svitejs/changesets-changelog-github-compact`, which is unmaintained):
+
+```js
+({ summary, pr, commit, linkHints }) => {
+  const ref = pr || commit;
+  return {
+    separator: "\n",
+    line: `- ${linkHints(summary)}${ref ? ` (${ref})` : ""}`,
+  };
+};
+```
+
+**Without thank-you messages** (replaces the old `disableThanks: true`):
+
+```js
+({ summary, pr, commit, linkRefs }) => {
+  const refs = [pr, commit].filter(Boolean).join(" ");
+  return `-${refs ? ` ${refs} -` : ""} ${linkRefs(summary)}`;
+};
+```
 
 For more details on these functions and information on how to write your own see [changelog-functions](./modifying-changelog-format.md)
 

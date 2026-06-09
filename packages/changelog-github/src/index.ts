@@ -57,90 +57,48 @@ async function readEnv() {
   return { GITHUB_SERVER_URL };
 }
 
-export const RELEASE_LINE_TOKENS = [
-  "summary",
-  "ref",
-  "pr",
-  "commit",
-  "authors",
-] as const;
-
-export function renderTemplate(
-  template: string,
-  tokens: Record<string, string>,
-): string {
-  return template.replace(/\{(\w+)\}/g, (_match, name: string) => {
-    if (!Object.hasOwn(tokens, name)) {
-      throw new Error(
-        `Unknown changelog template token "{${name}}". Valid tokens are: ${RELEASE_LINE_TOKENS.map(
-          (t) => `{${t}}`,
-        ).join(", ")}.`,
-      );
-    }
-    return tokens[name];
-  });
-}
-
-export function buildReleaseLineTokens(args: {
+export interface ReleaseLineParts {
+  /** First line of the changeset summary, raw (not linkified). */
   summary: string;
-  links: { pull: string | null; commit: string | null; user: string | null };
-  users: string | null;
-}): Record<string, string> {
-  const { summary, links, users } = args;
-  // Tokens render bare (no built-in spacing); the template author writes the
-  // spaces. `{ref}` is the one self-contained convenience: a parenthesized
-  // PR-or-commit reference (PR wins), empty when there is neither.
-  const ref = links.pull
-    ? `(${links.pull})`
-    : links.commit
-      ? `(${links.commit})`
-      : "";
-  return {
-    summary,
-    ref,
-    pr: links.pull ?? "",
-    commit: links.commit ?? "",
-    authors: users ?? "",
-  };
+  /** Markdown PR link, or "" when there is none. */
+  pr: string;
+  /** Markdown commit link, or "" when there is none. */
+  commit: string;
+  /** Markdown author links; empty when there is no attribution. */
+  authors: string[];
+  /** Links every bare `#123` in the given string (the default behavior). */
+  linkRefs: (line: string) => string;
+  /** Links only refs inside `(fix|fixes|see #123)`. */
+  linkHints: (line: string) => string;
 }
 
-const changelogFunctions: ChangelogFunctions = {
-  getDependencyReleaseLine: async (
-    changesets,
-    dependenciesUpdated,
-    options,
-  ) => {
-    const repo = options?.repo;
-    if (!repo || typeof repo !== "string") {
-      throw new Error(
-        'Please provide a repo to this changelog generator like this:\n"changelog": ["@changesets/changelog-github", { "repo": "org/repo" }]',
-      );
-    }
-    if (dependenciesUpdated.length === 0) return "";
+export type ReleaseLineResult = string | { separator?: string; line: string };
 
-    const changesetLink = `- Updated dependencies [${(
-      await Promise.all(
-        changesets.map(async (cs) => {
-          if (cs.commit) {
-            const { links } = await getInfo({
-              repo,
-              commit: cs.commit,
-            });
-            return links.commit;
-          }
-        }),
-      )
-    )
-      .filter((_) => _)
-      .join(", ")}]:`;
+export type ReleaseLineComposer = (
+  parts: ReleaseLineParts,
+) => ReleaseLineResult;
 
-    const updatedDepenenciesList = dependenciesUpdated.map(
-      (dependency) => `  - ${dependency.name}@${dependency.newVersion}`,
-    );
+// Reproduces the historical default line, byte-for-byte:
+//   - {pr} {commit} Thanks {authors}! - {summary}
+const defaultReleaseLine: ReleaseLineComposer = ({
+  summary,
+  pr,
+  commit,
+  authors,
+  linkRefs,
+}) => {
+  const prefix = [
+    pr ? ` ${pr}` : "",
+    commit ? ` ${commit}` : "",
+    authors.length ? ` Thanks ${authors.join(", ")}!` : "",
+  ].join("");
+  return `-${prefix ? `${prefix} -` : ""} ${linkRefs(summary)}`;
+};
 
-    return [changesetLink, ...updatedDepenenciesList].join("\n");
-  },
-  getReleaseLine: async (changeset, type, options) => {
+export function composeReleaseLine(
+  compose: ReleaseLineComposer,
+): ChangelogFunctions["getReleaseLine"] {
+  return async (changeset, _type, options) => {
     const repo = options?.repo;
     if (!repo || typeof repo !== "string") {
       throw new Error(
@@ -191,59 +149,82 @@ const changelogFunctions: ChangelogFunctions = {
       }
       const commitToFetchFrom = commitFromSummary || changeset.commit;
       if (commitToFetchFrom) {
-        const { links } = await getInfo({
-          repo,
-          commit: commitToFetchFrom,
-        });
+        const { links } = await getInfo({ repo, commit: commitToFetchFrom });
         return links;
       }
-      return {
-        commit: null,
-        pull: null,
-        user: null,
-      };
+      return { commit: null, pull: null, user: null };
     })();
 
-    const users = options.disableThanks
-      ? null
-      : usersFromSummary.length
-        ? usersFromSummary
-            .map(
-              (userFromSummary) =>
-                `[@${userFromSummary}](${GITHUB_SERVER_URL}/${userFromSummary})`,
-            )
-            .join(", ")
-        : links.user;
+    const linkOpts = { serverUrl: GITHUB_SERVER_URL, repo };
+    const linkRefs = (line: string) => linkifyIssueRefs(line, linkOpts);
+    const linkHints = (line: string) => linkifyIssueHints(line, linkOpts);
 
-    const autolink = (line: string): string => {
-      const linkOpts = { serverUrl: GITHUB_SERVER_URL, repo };
-      return options.autolinkIssues === "hints"
-        ? linkifyIssueHints(line, linkOpts)
-        : linkifyIssueRefs(line, linkOpts);
-    };
+    const authors = usersFromSummary.length
+      ? usersFromSummary.map(
+          (user) => `[@${user}](${GITHUB_SERVER_URL}/${user})`,
+        )
+      : links.user
+        ? [links.user]
+        : [];
 
-    const continuation = futureLines.map((l) => `  ${autolink(l)}`).join("\n");
+    const result = compose({
+      summary: firstLine,
+      pr: links.pull ?? "",
+      commit: links.commit ?? "",
+      authors,
+      linkRefs,
+      linkHints,
+    });
 
-    if (typeof options.template === "string" && options.template.length > 0) {
-      const tokens = buildReleaseLineTokens({
-        summary: autolink(firstLine),
-        links,
-        users,
-      });
-      // trimEnd so an empty trailing token (e.g. `{ref}` with no PR/commit)
-      // leaves no dangling space - a trailing space in markdown is unsafe.
-      const rendered = renderTemplate(options.template, tokens).trimEnd();
-      return `${rendered}\n${continuation}`;
+    const { separator, line } =
+      typeof result === "string"
+        ? { separator: "\n\n", line: result }
+        : { separator: result.separator ?? "\n\n", line: result.line };
+
+    const continuation =
+      "\n" + futureLines.map((l) => `  ${linkRefs(l)}`).join("\n");
+
+    return `${separator}${line}${continuation}`;
+  };
+}
+
+const changelogFunctions: ChangelogFunctions = {
+  getDependencyReleaseLine: async (
+    changesets,
+    dependenciesUpdated,
+    options,
+  ) => {
+    const repo = options?.repo;
+    if (!repo || typeof repo !== "string") {
+      throw new Error(
+        'Please provide a repo to this changelog generator like this:\n"changelog": ["@changesets/changelog-github", { "repo": "org/repo" }]',
+      );
     }
+    if (dependenciesUpdated.length === 0) return "";
 
-    const prefix = [
-      links.pull == null ? "" : ` ${links.pull}`,
-      links.commit == null ? "" : ` ${links.commit}`,
-      users == null ? "" : ` Thanks ${users}!`,
-    ].join("");
+    const changesetLink = `- Updated dependencies [${(
+      await Promise.all(
+        changesets.map(async (cs) => {
+          if (cs.commit) {
+            const { links } = await getInfo({
+              repo,
+              commit: cs.commit,
+            });
+            return links.commit;
+          }
+        }),
+      )
+    )
+      .filter((_) => _)
+      .join(", ")}]:`;
 
-    return `\n\n-${prefix ? `${prefix} -` : ""} ${autolink(firstLine)}\n${continuation}`;
+    const updatedDepenenciesList = dependenciesUpdated.map(
+      (dependency) => `  - ${dependency.name}@${dependency.newVersion}`,
+    );
+
+    return [changesetLink, ...updatedDepenenciesList].join("\n");
   },
+  getReleaseLine: composeReleaseLine(defaultReleaseLine),
 };
 
 // ChangelogFunctions require a default export
